@@ -1,0 +1,1220 @@
+############################################################
+#########  Read in the two datasets 
+############################################################
+
+# Training data
+train = read.csv('C:/Users/dcoli/Desktop/train.csv')
+
+# Test data
+test = read.csv('C:/Users/dcoli/Desktop/test.csv')
+
+############################################################
+#########  Data cleaning: Training and Test Data
+############################################################
+
+# Rename train so it's not overwritten, delete MM23 variable
+trainrest = train
+trainrest$MM23=NULL
+
+# Rename test so it's not overwritten, delete MM23 variable
+testrest = test
+testrest$MM23=NULL
+
+##################################################################### 
+
+# numeric variables -- impute with mode
+numericvariables = c('DG8a','DG8b','DG8c','DG9a','DG9b','DG9c','DL8','DL11','MT1','MT6C','FF7_1','FF7_2',
+                     'FF7_3','FF7_4','FF7_5','FF7_6','FF7_7','FF7_96','FF8_1','FF8_2','FF8_3','FF8_4',
+                     'FF8_5','FF8_6','FF8_7','FF8_96','IFI18','FB13','FB14','FB15', 'MT11', 'DG1')
+
+# Make sure all variables are in train and test
+numericvariables %in% names(trainrest)
+numericvariables %in% names(testrest)
+
+# Make all variables numeric
+trainrest[numericvariables] <- lapply(trainrest[numericvariables],as.numeric)
+testrest[numericvariables] <- lapply(testrest[numericvariables],as.numeric)
+
+# Create a Mode function
+Mode <- function (x, na.rm) {
+   xtab <- table(x)
+   xmode <- names(which(xtab == max(xtab)))
+   if (length(xmode) > 1) xmode <- as.numeric(xmode[1])
+   return(xmode)
+}
+
+# Impute missing values with Mode (extremely skewed variables)
+for (var in 1:ncol(trainrest)) {
+   if (names(trainrest)[var] %in% numericvariables) {
+      trainrest[is.na(trainrest[,var]),var] <- Mode(trainrest[,var], na.rm = TRUE)
+   } 
+}
+
+for (var in 1:ncol(testrest)) {
+   if (names(testrest)[var] %in% numericvariables) {
+      testrest[is.na(testrest[,var]),var] <- Mode(testrest[,var], na.rm = TRUE)
+   } 
+}
+
+# Make them all numeric again
+trainrest[numericvariables] <- lapply(trainrest[numericvariables],as.numeric)
+testrest[numericvariables] <- lapply(testrest[numericvariables],as.numeric)
+
+################################### 
+# factor variables
+
+# Replace all NA with MISSING so it can be used as a factor
+trainrest[is.na(trainrest)]   <- "MISSING"
+testrest[is.na(testrest)] <- 'MISSING'
+
+# All non-numeric variables are converted to factor
+factorvariables = names(trainrest[-which(names(trainrest) %in% numericvariables)])
+trainrest[factorvariables] <- lapply(trainrest[factorvariables],as.factor)
+
+factorvariables = names(testrest[-which(names(testrest) %in% numericvariables)])
+testrest[factorvariables] <- lapply(testrest[factorvariables],as.factor)
+
+# Take OTHERS$ out of the column names of all variables
+trainrest = trainrest[, -grep("OTHERS$", colnames(trainrest))]
+testrest = testrest[, - grep('OTHERS$', colnames(testrest))]
+
+# Make a vector of variabels where at least 90% of the rows are missing
+missing = as.data.frame(sapply(trainrest, function(x) sum(x=='MISSING')))
+missing$name = rownames(missing)
+missing$missing = missing$`sapply(trainrest, function(x) sum(x == "MISSING"))`
+missing$`sapply(trainrest, function(x) sum(x == "MISSING"))`=NULL
+missing$percmissing = missing$missing / nrow(trainrest)
+allmissing = c(missing[which(as.numeric(missing$percmissing) > 0.9),'name'])
+
+# Remove these variables from the vector because being missing is valuable information
+allmissing = allmissing[-which(allmissing == 'G2P5_11')]
+allmissing = allmissing[-which(allmissing == 'G2P2_11')]
+allmissing = allmissing[-which(allmissing == 'G2P4_11')]
+allmissing = allmissing[-which(allmissing == 'MM36_13')]
+allmissing = allmissing[-which(allmissing == 'FF16_3')]
+
+# Remove remaining variables that are >90% missing
+trainrest = trainrest[,-which(names(trainrest) %in% allmissing)]
+testrest = testrest[,-which(names(testrest) %in% allmissing)]
+
+factors = as.data.frame(sapply(trainrest, function(x) nlevels(x)))
+factors$name = rownames(factors)
+
+factors2 = as.data.frame(sapply(testrest, function(x) nlevels(x)))
+factors2$name = rownames(factors2)
+
+factors$levels = factors$`sapply(trainrest, function(x) nlevels(x))`
+factors$`sapply(trainrest, function(x) nlevels(x))`=NULL
+
+factors2$levels = factors2$`sapply(testrest, function(x) nlevels(x))`
+factors2$`sapply(testrest, function(x) nlevels(x))`=NULL
+
+factors = factors[-10,]
+
+all = merge(factors, factors2, by='name')
+all$different = ifelse(all$levels.x != all$levels.y, 1, 0)
+all2 = all[which(all$different == 1),]
+
+missing = as.data.frame(sapply(trainrest, function(x) sum(x=='MISSING')))
+missing$name = rownames(missing)                        
+missing$missing = missing$`sapply(trainrest, function(x) sum(x == "MISSING"))`
+missing$`sapply(trainrest, function(x) sum(x == "MISSING"))`=NULL
+missing = missing[-10,]
+missing$percmissing = missing$missing / nrow(trainrest)
+
+missing2 = as.data.frame(sapply(testrest, function(x) sum(x=='MISSING')))
+missing2$name = rownames(missing2)                        
+missing2$missing = missing2$`sapply(testrest, function(x) sum(x == "MISSING"))`
+missing2$`sapply(testrest, function(x) sum(x == "MISSING"))`=NULL
+missing2$percmissing2 = missing2$missing / nrow(testrest)
+
+
+all3 = merge(all2, missing, by='name')
+all4 = merge(all3, missing2, by='name')
+
+removethese = c("AA14", "AA15", "DG10b", "DG10c", 'AA7', "DG11b", "LN2_RIndLngBEOth", "LN2_WIndLngBEOth", "MM12_REC", "MT13_2") 
+
+trainrest = trainrest[,-which(names(trainrest) %in% removethese)]
+testrest = testrest[,-which(names(testrest) %in% removethese)]
+
+trainrest$DG4_DK = ifelse(trainrest$DG4==99, 1, 0)
+testrest$DG4_DK = ifelse(testrest$DG4 == 99, 1, 9)
+
+trainrest$DG4 = ifelse(trainrest$DG4 == 96, 1, trainrest$DG4)
+testrest$DG4 = ifelse(testrest$DG4 == 96, 1, testrest$DG4)
+
+trainrest$DG4 = ifelse(trainrest$DG4 == 99, 12, trainrest$DG4)
+testrest$DG4 = ifelse(testrest$DG4 == 99, 12, testrest$DG4)
+
+trainrest$DG4 = ordered(trainrest$DG4)
+testrest$DG4 = ordered(testrest$DG4)
+
+trainrest$age = 2018 - as.numeric(trainrest$DG1)
+testrest$age = 2018 - as.numeric(testrest$DG1)
+
+trainrest$bin_age = ordered(ifelse(trainrest$age < 25, 1, 
+                                   ifelse(((trainrest$age > 24) & (trainrest$age < 60)), 2, 
+                                          3)))
+
+testrest$bin_age = ordered(ifelse(testrest$age < 25, 1, 
+                                  ifelse(((testrest$age > 24) & (testrest$age < 60)), 2, 
+                                         3)))
+
+testrest$DG1 = NULL
+trainrest$DG1 = NULL
+
+# Making remaining variables have equal levels
+levels(testrest$MT12_1) = levels(trainrest$MT12_1)
+levels(testrest$MT12_12)= levels(trainrest$MT12_12)
+levels(trainrest$MT12_13)= levels(testrest$MT12_13)
+levels(trainrest$MT12_14)= levels(testrest$MT12_14)
+levels(testrest$MT12_2)= levels(trainrest$MT12_2)
+levels(testrest$MT12_3)= levels(trainrest$MT12_3)
+levels(trainrest$MT12_4)= levels(testrest$MT12_4)
+levels(trainrest$MT12_9)= levels(testrest$MT12_9)
+levels(testrest$MT3_2)= levels(trainrest$MT3_2)
+levels(trainrest$MT3_3)= levels(testrest$MT3_3)
+
+trainrest$MT3_3
+
+trainrest$DG5_96 = NULL
+testrest$DG5_96 = NULL
+
+trainrest$MM2_16 = NULL
+testrest$MM2_16 = NULL
+
+highlevelfactors=c("FF3","DL5","DL14","AA4","FF2A","DL28","FB24","MM13_REC","FB20", "DL27","FL10","FL9B","FL9C","DL12","FL9A","IFI24",
+                   "FB19","IFI16_1","IFI16_2", "IFI16_6" , "IFI16_7" , "DG11c" ,   "FL3" , "IFI16_5")
+trainrest = trainrest[,-which(names(trainrest) %in% highlevelfactors)]
+testrest = testrest[,-which(names(testrest) %in% highlevelfactors)]
+
+###################################################################################################
+### The following code was looking at significant differences between levels of all variable levels and
+#    the gender associated with those answers 
+
+# Example: If 60% of all females responded "No" to a question and only 5% of all males responded "No", 
+# print out that difference. 
+# Did this across all 1,300+ variables for a quick introductory analysis of which questions would be useful
+# in determining whether the responders were male or female
+
+# Looking at table --> point out distributional differences 
+# for(i in 2:ncol(dat)){
+#   t = table(dat[,i], dat$is_female)
+#   rows = as.numeric(dim(t)[1])
+#   col1sum = as.numeric(sum(t[1:dim(t)[1]]))
+#   col2sum = as.numeric(sum(t[(1+dim(t)[1]):(rows*2)]))
+# 
+#   t[1:rows] = t[1:rows]/col1sum
+#   t[(rows+1):(rows*2)] = t[(rows+1):(rows*2)]/col2sum
+# 
+#   for(j in 1:rows){
+#       if(abs(t[j+rows]-t[j]) > 0.50){
+#         print(i)
+#       }
+#   }
+# }
+
+########### MORE THAN 50% DIFFERENCE
+# 27
+# DG6
+# 65.2% of men say they are the household head --> 12.4% of females say this
+# 63.5% of females say they are spouse to the household head --> 4% of men say this 
+
+# 52
+# DL0 -- Who is the main income earner in the household?
+# 68.7% of men say "myself", 31.3% say "someone else"
+# 8.4% of women say "myself", 91.6% say "someone else"
+
+# 53
+# DL1 -- in the past 12 months were you mainly...
+# 37.8% of men said working full time for salary
+# 56.4% of women said staying home doing chores 
+
+################# MORE THAN 40% DIFFERENCE
+# 55
+# DL2 -- What is your primary job (i.e., the job where you spend most of your time)?
+# MISSING for 73% of women, only missing for 25% of men 
+# 1, 11, 19
+
+# 58
+# DL3. Do you have a secondary job/jobs?
+# MISSING for 73% of women, only MISSING for 25% of men
+# 62% of men say 2 (no), 24% of women say "yes"
+# 13.4% of men say 1 (yes), only 3% of women say yes
+
+# 230
+# MT1A.Who decides on who should have a phone in your household?
+# 66.1% of men say 1 (myself), 16.6% of women say this
+# 51.1% of women say 2 (my spouse), 3.2% of men say this
+
+# 243
+# MT6.How did you obtain your phone?
+# 57.3% of men say 1 (I bought it myself), only 10.8% of women say this 
+# 66.75% MISSING for women, only 33% MISSING for men 
+
+##################### MORE THAN 35% DIFFERENCE
+
+# 1042
+# FL4.What or who do you depend on the most for financial advice?
+# 54.4% of men say 1 (myself only), only 17.7% of women say this 
+# 50.1% of women say 2 (Spouse), only 11.2% of men say this 
+
+# 1225
+# GN1.Who usually decides how the money you earn will be used?
+# 49.63% of men say myself, 14% of women say this
+# 27.3% of women say spouse, 9.6% of men say this
+# 31.4% of women leave this MISSING, 11.1% of men do this 
+# Women 10x more likely to say 96 (Other (specify)) than men are 
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+############# CREATE NEW VARIABLES FROM OLD ONES TO REDUCE LEVELS (QUICKER MODELING)
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+dat = trainrest
+####### 33 and above: 
+#231
+dat$female_231 = ifelse(dat$MT2=='2',1, 0)
+dat$male_231 = ifelse(dat$MT2=='1',1,0)
+
+#232
+dat$female_232 = ifelse(dat$MT3_1=='MISSING',1, 0)
+dat$male_232 = ifelse(dat$MT3_1=='0',1,0)
+
+#233
+dat$female_233 = ifelse(dat$MT3_2=='MISSING',1, 0)
+dat$male_233 = ifelse(dat$MT3_2=='1',1,0)
+
+#234
+dat$female_234 = ifelse(dat$MT3_3=='MISSING',1, 0)
+dat$male_234 = ifelse(dat$MT3_3=='1',1,0)
+
+#235
+dat$female_235 = ifelse(dat$MT4_1=='MISSING',1, 0)
+dat$male_235 = ifelse(dat$MT4_1=='1',1,0)
+
+#236
+dat$female_236 = ifelse(dat$MT4_2=='MISSING',1, 0)
+dat$male_236 = ifelse(dat$MT4_2!='MISSING',1,0)
+
+#237
+dat$female_237 = ifelse(dat$MT4_3=='MISSING',1, 0)
+dat$male_237 = ifelse(dat$MT4_3!='MISSING',1,0)
+
+#238
+dat$female_238 = ifelse(dat$MT4_4=='MISSING',1, 0)
+dat$male_238 = ifelse(dat$MT4_4!='MISSING',1,0)
+
+#239
+dat$female_239 = ifelse(dat$MT4_5=='MISSING',1, 0)
+dat$male_239 = ifelse(dat$MT4_5!='MISSING',1,0)
+
+#240
+dat$female_240 = ifelse(dat$MT4_6 =='MISSING',1, 0)
+dat$male_240 = ifelse(dat$MT4_6 !='1',1,0)
+
+#241
+dat$female_241 = ifelse(dat$MT5 =='MISSING',1, 0)
+dat$male_241 = ifelse(dat$MT5 !='MISSING',1,0)
+
+#245
+dat$female_245 = ifelse(dat$MT6A=='MISSING',1, 0)
+dat$male_245 = ifelse(dat$MT6A!='MISSING',1,0)
+
+#247
+dat$female_247 = ifelse(dat$MT6B=='MISSING',1, 0)
+dat$male_247 = ifelse(dat$MT6B!='MISSING',1,0)
+
+#249
+dat$female_249 = ifelse(dat$MT6C=='MISSING',1, 0)
+dat$male_249 = ifelse(dat$MT6C!='MISSING',1,0)
+
+#250
+dat$female_250 = ifelse(dat$MT7 != 'MISSING',1, 0)
+dat$male_250 = ifelse(dat$MT7=='MISSING',1,0)
+
+#256
+dat$female_256 = ifelse(dat$MT10=='2',1, 0)
+dat$male_256 = ifelse(dat$MT10=='1',1,0)
+
+#257
+dat$female_257 = ifelse(dat$MT11=='MISSING',1, 0)
+dat$male_257 = ifelse(dat$MT11!='MISSING',1,0)
+
+#258
+dat$female_258 = ifelse(dat$MT12_1=='MISSING',1, 0)
+dat$male_258 = ifelse(dat$MT12_1!='MISSING',1,0)
+
+#259
+dat$female_259 = ifelse(dat$MT12_2=='MISSING',1, 0)
+dat$male_259 = ifelse(dat$MT12_2!='MISSING',1,0)
+
+#260
+dat$female_260 = ifelse(dat$MT12_3=='MISSING',1, 0)
+dat$male_260 = ifelse(dat$MT12_3!='MISSING',1,0)
+
+#261
+dat$female_261 = ifelse(dat$MT12_4=='MISSING',1, 0)
+dat$male_261 = ifelse(dat$MT12_4!='MISSING',1,0)
+
+#262
+dat$female_262 = ifelse(dat$MT12_5=='MISSING',1, 0)
+dat$male_262 = ifelse(dat$MT12_5!='MISSING',1,0)
+
+#263
+dat$female_263 = ifelse(dat$MT12_6=='MISSING',1, 0)
+dat$male_263 = ifelse(dat$MT12_6!='MISSING',1,0)
+
+#264
+dat$female_264 = ifelse(dat$MT12_7=='MISSING',1, 0)
+dat$male_264 = ifelse(dat$MT12_7!='MISSING',1,0)
+
+#265
+dat$female_265 = ifelse(dat$MT12_8=='MISSING',1, 0)
+dat$male_265 = ifelse(dat$MT12_8!='MISSING',1,0)
+
+#266
+dat$female_266 = ifelse(dat$MT12_9=='MISSING',1, 0)
+dat$male_266 = ifelse(dat$MT12_9!='MISSING',1,0)
+
+#267
+dat$female_267 = ifelse(dat$MT12_10=='MISSING',1, 0)
+dat$male_267 = ifelse(dat$MT12_10!='MISSING',1,0)
+
+#268
+dat$female_268 = ifelse(dat$MT12_11=='MISSING',1, 0)
+dat$male_268 = ifelse(dat$MT12_11!='MISSING',1,0)
+
+#269
+dat$female_269 = ifelse(dat$MT12_12=='MISSING',1, 0)
+dat$male_269 = ifelse(dat$MT12_12!='MISSING',1,0)
+
+#270
+dat$female_270 = ifelse(dat$MT12_13=='MISSING',1, 0)
+dat$male_270 = ifelse(dat$MT12_13!='MISSING',1,0)
+
+#271
+dat$female_271 = ifelse(dat$MT12_14=='MISSING',1, 0)
+dat$male_271 = ifelse(dat$MT12_14!='MISSING',1,0)
+
+#272
+dat$female_272 = ifelse(dat$MT12_96=='MISSING',1, 0)
+dat$male_272 = ifelse(dat$MT12_96!='MISSING',1,0)
+
+#333
+dat$female_333 = ifelse(dat$MT14C_1=='MISSING',1, 0)
+dat$male_333 = ifelse(dat$MT14C_1!='MISSING',1,0)
+
+#334
+dat$female_334 = ifelse(dat$MT14C_2=='MISSING',1, 0)
+dat$male_334 = ifelse(dat$MT14C_2!='MISSING',1,0)
+
+#335
+dat$female_335 = ifelse(dat$MT14C_3=='MISSING',1, 0)
+dat$male_335 = ifelse(dat$MT14C_3!='MISSING',1,0)
+
+#336
+dat$female_336 = ifelse(dat$MT14C_4=='MISSING',1, 0)
+dat$male_336 = ifelse(dat$MT14C_4!='MISSING',1,0)
+
+#337
+dat$female_337 = ifelse(dat$MT15!='MISSING',1, 0)
+dat$male_337 = ifelse(dat$MT15=='MISSING',1,0)
+
+### 50+ Variables
+dat$female_27 = ifelse(dat$DG6=='2', 1, 0)
+dat$female_52 = ifelse(dat$DL0=='2', 1, 0)
+dat$female_53 = ifelse(dat$DL1=='Female', 1, 0)
+
+dat$Sum_50Plus = dat$female_27+dat$female_52 + dat$female_53
+
+### 40+ Variables
+dat$female_55 = ifelse(dat$DL2=='Female', 1, 0)
+dat$female_58 = ifelse(dat$DL3=='MISSING', 1, 0)
+dat$female_230 = ifelse(dat$MT1A=='2', 1, 0)
+dat$female_243 = ifelse(dat$MT6 == 'Female', 1, 0)
+
+dat$Sum_40Plus = dat$female_27+dat$female_52 + dat$female_53 + dat$female_55 + dat$female_58 + dat$female_230 + dat$female_243
+
+### 35+ Variables
+dat$female_1042 = ifelse(dat$FL4=='Female', 1, 0)
+dat$female_1225 = ifelse(((dat$GN1=='2') | (dat$GN1=='MISSING') | (dat$GN1=='96')), 1, 0)
+
+dat$Sum_35Plus = dat$female_27+dat$female_52 + dat$female_53 + dat$female_55 + dat$female_58 + dat$female_230 + dat$female_243 + dat$female_1042 + dat$female_1225
+
+
+
+############ Association variables
+#dat$question1 = ifelse(((dat$G2P3_11=='2') | (dat$G2P3_11=='30') | (dat$G2P3_11 == '0')), 1, 0)
+dat$question2 = ifelse(((dat$G2P5_11=='1') | (dat$G2P5_11=='2')), 1, 0)
+dat$question3 = ifelse(((dat$G2P1_11=='1')), 1, 0)
+dat$question4 = ifelse(dat$G2P2_11=='Female', 1, 0)
+dat$question5 = ifelse(((dat$G2P4_11=='2')), 1, 0)
+
+dat$sum40_Questions = (dat$female_27+dat$female_52 + dat$female_53 + dat$female_55 + dat$female_58 + 
+                          dat$female_230 + dat$female_243  + dat$question2 + dat$question3 + dat$question4 + dat$question5+ dat$female_1042 + dat$female_1225+
+                          dat$female_231 + dat$female_250 + dat$female_256 + dat$female_333 + dat$female_337)
+
+
+
+###############################################################################################
+# Sum of Men's Typical Answers 
+###############################################################################################
+
+### 50+ Variables
+dat$male_27 = ifelse(dat$DG6=='1', 1, 0)
+dat$male_52 = ifelse(dat$DL0=='1', 1, 0)
+dat$male_53 = ifelse(dat$DL1=='Male', 1, 0)
+
+dat$Male_Sum_50Plus = dat$male_27+dat$male_52 + dat$male_53
+
+### 40+ Variables
+dat$male_55 = ifelse(dat$DL2=='Male', 1, 0)
+dat$male_58 = ifelse(((dat$DL3=='1') | (dat$DL3=='2')), 1, 0)
+dat$male_230 = ifelse(dat$MT1A=='1', 1, 0)
+dat$male_243 = ifelse(dat$MT6 == 'Male', 1, 0)
+
+dat$Male_Sum_40Plus = dat$male_27+dat$male_52 + dat$male_53 + dat$male_55 + dat$male_58 + dat$male_230 + dat$male_243
+
+### 35+ Variables
+dat$male_1042 = ifelse(dat$FL4=='Male', 1, 0)
+dat$male_1225 = ifelse(((dat$GN1=='1')), 1, 0)
+
+dat$Male_Sum_35Plus = dat$male_27+dat$male_52 + dat$male_53 + dat$male_55 + dat$male_58 + dat$male_230 + dat$male_243 + dat$male_1042 + dat$male_1225
+
+
+############ Association variables
+#dat$malequestion1 = ifelse(((dat$AA14=='5636') | (dat$AA14=='513') | (dat$AA14 == '5645')), 1, 0)
+#dat$malequestion2 = ifelse(((dat$AA7=='436151') | (dat$AA7=='316021')), 1, 0)
+dat$malequestion3 = ifelse(((dat$MM36_13=='1')), 1, 0)
+dat$malequestion4 = ifelse((dat$DG5_4=='1'), 1, 0)
+dat$malequestion5 = ifelse(((dat$FF16_3=='5')), 1, 0)
+
+dat$Male_sum40_Questions = (dat$male_27+dat$male_52 + dat$male_53 + dat$male_55 + dat$male_58 + 
+                               dat$male_230 + dat$male_243 + dat$malequestion3 + dat$malequestion4 + dat$malequestion5+ dat$male_1042 + dat$male_1225+
+                               dat$male_231 + dat$male_250 + dat$male_256 + dat$male_333 + dat$male_337)
+
+
+dat$NetSum = dat$sum40_Questions - dat$Male_sum40_Questions
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+############# TEST DATA
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+testdat = testrest
+
+####### 33 and above: 
+#231
+testdat$female_231 = ifelse(testdat$MT2=='2',1, 0)
+testdat$male_231 = ifelse(testdat$MT2=='1',1,0)
+
+#232
+testdat$female_232 = ifelse(testdat$MT3_1=='MISSING',1, 0)
+testdat$male_232 = ifelse(testdat$MT3_1=='0',1,0)
+
+#233
+testdat$female_233 = ifelse(testdat$MT3_2=='MISSING',1, 0)
+testdat$male_233 = ifelse(testdat$MT3_2=='1',1,0)
+
+#234
+testdat$female_234 = ifelse(testdat$MT3_3=='MISSING',1, 0)
+testdat$male_234 = ifelse(testdat$MT3_3=='1',1,0)
+
+#235
+testdat$female_235 = ifelse(testdat$MT4_1=='MISSING',1, 0)
+testdat$male_235 = ifelse(testdat$MT4_1=='1',1,0)
+
+#236
+testdat$female_236 = ifelse(testdat$MT4_2=='MISSING',1, 0)
+testdat$male_236 = ifelse(testdat$MT4_2!='MISSING',1,0)
+
+#237
+testdat$female_237 = ifelse(testdat$MT4_3=='MISSING',1, 0)
+testdat$male_237 = ifelse(testdat$MT4_3!='MISSING',1,0)
+
+#238
+testdat$female_238 = ifelse(testdat$MT4_4=='MISSING',1, 0)
+testdat$male_238 = ifelse(testdat$MT4_4!='MISSING',1,0)
+
+#239
+testdat$female_239 = ifelse(testdat$MT4_5=='MISSING',1, 0)
+testdat$male_239 = ifelse(testdat$MT4_5!='MISSING',1,0)
+
+#240
+testdat$female_240 = ifelse(testdat$MT4_6 =='MISSING',1, 0)
+testdat$male_240 = ifelse(testdat$MT4_6 !='1',1,0)
+
+#241
+testdat$female_241 = ifelse(testdat$MT5 =='MISSING',1, 0)
+testdat$male_241 = ifelse(testdat$MT5 !='MISSING',1,0)
+
+#245
+testdat$female_245 = ifelse(testdat$MT6A=='MISSING',1, 0)
+testdat$male_245 = ifelse(testdat$MT6A!='MISSING',1,0)
+
+#247
+testdat$female_247 = ifelse(testdat$MT6B=='MISSING',1, 0)
+testdat$male_247 = ifelse(testdat$MT6B!='MISSING',1,0)
+
+#249
+testdat$female_249 = ifelse(testdat$MT6C=='MISSING',1, 0)
+testdat$male_249 = ifelse(testdat$MT6C!='MISSING',1,0)
+
+#250
+testdat$female_250 = ifelse(testdat$MT7 != 'MISSING',1, 0)
+testdat$male_250 = ifelse(testdat$MT7=='MISSING',1,0)
+
+#256
+testdat$female_256 = ifelse(testdat$MT10=='2',1, 0)
+testdat$male_256 = ifelse(testdat$MT10=='1',1,0)
+
+#257
+testdat$female_257 = ifelse(testdat$MT11=='MISSING',1, 0)
+testdat$male_257 = ifelse(testdat$MT11!='MISSING',1,0)
+
+#258
+testdat$female_258 = ifelse(testdat$MT12_1=='MISSING',1, 0)
+testdat$male_258 = ifelse(testdat$MT12_1!='MISSING',1,0)
+
+#259
+testdat$female_259 = ifelse(testdat$MT12_2=='MISSING',1, 0)
+testdat$male_259 = ifelse(testdat$MT12_2!='MISSING',1,0)
+
+#260
+testdat$female_260 = ifelse(testdat$MT12_3=='MISSING',1, 0)
+testdat$male_260 = ifelse(testdat$MT12_3!='MISSING',1,0)
+
+#261
+testdat$female_261 = ifelse(testdat$MT12_4=='MISSING',1, 0)
+testdat$male_261 = ifelse(testdat$MT12_4!='MISSING',1,0)
+
+#262
+testdat$female_262 = ifelse(testdat$MT12_5=='MISSING',1, 0)
+testdat$male_262 = ifelse(testdat$MT12_5!='MISSING',1,0)
+
+#263
+testdat$female_263 = ifelse(testdat$MT12_6=='MISSING',1, 0)
+testdat$male_263 = ifelse(testdat$MT12_6!='MISSING',1,0)
+
+#264
+testdat$female_264 = ifelse(testdat$MT12_7=='MISSING',1, 0)
+testdat$male_264 = ifelse(testdat$MT12_7!='MISSING',1,0)
+
+#265
+testdat$female_265 = ifelse(testdat$MT12_8=='MISSING',1, 0)
+testdat$male_265 = ifelse(testdat$MT12_8!='MISSING',1,0)
+
+#266
+testdat$female_266 = ifelse(testdat$MT12_9=='MISSING',1, 0)
+testdat$male_266 = ifelse(testdat$MT12_9!='MISSING',1,0)
+
+#267
+testdat$female_267 = ifelse(testdat$MT12_10=='MISSING',1, 0)
+testdat$male_267 = ifelse(testdat$MT12_10!='MISSING',1,0)
+
+#268
+testdat$female_268 = ifelse(testdat$MT12_11=='MISSING',1, 0)
+testdat$male_268 = ifelse(testdat$MT12_11!='MISSING',1,0)
+
+#269
+testdat$female_269 = ifelse(testdat$MT12_12=='MISSING',1, 0)
+testdat$male_269 = ifelse(testdat$MT12_12!='MISSING',1,0)
+
+#270
+testdat$female_270 = ifelse(testdat$MT12_13=='MISSING',1, 0)
+testdat$male_270 = ifelse(testdat$MT12_13!='MISSING',1,0)
+
+#271
+testdat$female_271 = ifelse(testdat$MT12_14=='MISSING',1, 0)
+testdat$male_271 = ifelse(testdat$MT12_14!='MISSING',1,0)
+
+#272
+testdat$female_272 = ifelse(testdat$MT12_96=='MISSING',1, 0)
+testdat$male_272 = ifelse(testdat$MT12_96!='MISSING',1,0)
+
+#333
+testdat$female_333 = ifelse(testdat$MT14C_1=='MISSING',1, 0)
+testdat$male_333 = ifelse(testdat$MT14C_1!='MISSING',1,0)
+
+#334
+testdat$female_334 = ifelse(testdat$MT14C_2=='MISSING',1, 0)
+testdat$male_334 = ifelse(testdat$MT14C_2!='MISSING',1,0)
+
+#335
+testdat$female_335 = ifelse(testdat$MT14C_3=='MISSING',1, 0)
+testdat$male_335 = ifelse(testdat$MT14C_3!='MISSING',1,0)
+
+#336
+testdat$female_336 = ifelse(testdat$MT14C_4=='MISSING',1, 0)
+testdat$male_336 = ifelse(testdat$MT14C_4!='MISSING',1,0)
+
+#337
+testdat$female_337 = ifelse(testdat$MT15!='MISSING',1, 0)
+testdat$male_337 = ifelse(testdat$MT15=='MISSING',1,0)
+
+### 50+ Variables
+testdat$female_27 = ifelse(testdat$DG6=='2', 1, 0)
+testdat$female_52 = ifelse(testdat$DL0=='2', 1, 0)
+testdat$female_53 = ifelse(testdat$DL1=='Female', 1, 0)
+
+testdat$Sum_50Plus = testdat$female_27+testdat$female_52 + testdat$female_53
+
+### 40+ Variables
+testdat$female_55 = ifelse(testdat$DL2=='Female', 1, 0)
+testdat$female_58 = ifelse(testdat$DL3=='MISSING', 1, 0)
+testdat$female_230 = ifelse(testdat$MT1A=='2', 1, 0)
+testdat$female_243 = ifelse(testdat$MT6 == 'Female', 1, 0)
+
+testdat$Sum_40Plus = testdat$female_27+testdat$female_52 + testdat$female_53 + testdat$female_55 + testdat$female_58 + testdat$female_230 + testdat$female_243
+
+### 35+ Variables
+testdat$female_1042 = ifelse(testdat$FL4=='Female', 1, 0)
+testdat$female_1225 = ifelse(((testdat$GN1=='2') | (testdat$GN1=='MISSING') | (testdat$GN1=='96')), 1, 0)
+
+testdat$Sum_35Plus = testdat$female_27+testdat$female_52 + testdat$female_53 + testdat$female_55 + testdat$female_58 + testdat$female_230 + testdat$female_243 + testdat$female_1042 + testdat$female_1225
+
+
+############ Association variables
+#testdat$question1 = ifelse(((testdat$G2P3_11=='2') | (testdat$G2P3_11=='30') | (testdat$G2P3_11 == '0')), 1, 0)
+testdat$question2 = ifelse(((testdat$G2P5_11=='1') | (testdat$G2P5_11=='2')), 1, 0)
+testdat$question3 = ifelse(((testdat$G2P1_11=='1')), 1, 0)
+testdat$question4 = ifelse(testdat$G2P2_11=='Female', 1, 0)
+testdat$question5 = ifelse(((testdat$G2P4_11=='2')), 1, 0)
+
+testdat$sum40_Questions = (testdat$female_27+testdat$female_52 + testdat$female_53 + testdat$female_55 + testdat$female_58 + 
+                              testdat$female_230 + testdat$female_243  + testdat$question2 + testdat$question3 + testdat$question4 + testdat$question5+ testdat$female_1042 + testdat$female_1225+
+                              testdat$female_231 + testdat$female_250 + testdat$female_256 + testdat$female_333 + testdat$female_337)
+
+
+
+###############################################################################################
+# Sum of Men's Typical Answers 
+###############################################################################################
+
+### 50+ Variables
+testdat$male_27 = ifelse(testdat$DG6=='1', 1, 0)
+testdat$male_52 = ifelse(testdat$DL0=='1', 1, 0)
+testdat$male_53 = ifelse(testdat$DL1=='Male', 1, 0)
+
+testdat$Male_Sum_50Plus = testdat$male_27+testdat$male_52 + testdat$male_53
+
+### 40+ Variables
+testdat$male_55 = ifelse(testdat$DL2=='Male', 1, 0)
+testdat$male_58 = ifelse(((testdat$DL3=='1') | (testdat$DL3=='2')), 1, 0)
+testdat$male_230 = ifelse(testdat$MT1A=='1', 1, 0)
+testdat$male_243 = ifelse(testdat$MT6 == 'Male', 1, 0)
+
+testdat$Male_Sum_40Plus = testdat$male_27+testdat$male_52 + testdat$male_53 + testdat$male_55 + testdat$male_58 + testdat$male_230 + testdat$male_243
+
+
+### 35+ Variables
+testdat$male_1042 = ifelse(testdat$FL4=='Male', 1, 0)
+testdat$male_1225 = ifelse(((testdat$GN1=='1')), 1, 0)
+
+testdat$Male_Sum_35Plus = testdat$male_27+testdat$male_52 + testdat$male_53 + testdat$male_55 + testdat$male_58 + testdat$male_230 + testdat$male_243 + testdat$male_1042 + testdat$male_1225
+
+
+
+############ Association variables
+#testdat$malequestion1 = ifelse(((testdat$AA14=='5636') | (testdat$AA14=='513') | (testdat$AA14 == '5645')), 1, 0)
+#testdat$malequestion2 = ifelse(((testdat$AA7=='436151') | (testdat$AA7=='316021')), 1, 0)
+testdat$malequestion3 = ifelse(((testdat$MM36_13=='1')), 1, 0)
+testdat$malequestion4 = ifelse((testdat$DG5_4=='1'), 1, 0)
+testdat$malequestion5 = ifelse(((testdat$FF16_3=='5')), 1, 0)
+
+testdat$Male_sum40_Questions = (testdat$male_27+testdat$male_52 + testdat$male_53 + testdat$male_55 + testdat$male_58 + 
+                                   testdat$male_230 + testdat$male_243 + testdat$malequestion3 + testdat$malequestion4 + testdat$malequestion5+ testdat$male_1042 + testdat$male_1225+
+                                   testdat$male_231 + testdat$male_250 + testdat$male_256 + testdat$male_333 + testdat$male_337)
+
+
+
+testdat$NetSum = testdat$sum40_Questions - testdat$Male_sum40_Questions
+
+
+##########################################################################################################################
+##########################################################################################################################
+##########################################################################################################################
+
+# Create a 'logic prediction' variable based on the results from the exploratory analysis alone
+# This ended up being useful in our modeling process
+dat$logic_prediction = as.factor(ifelse(((dat$NetSum >= 11) | (dat$Sum_40Plus >= 5) | (dat$sum40_Questions > 10) |
+                                            (dat$G2P1_16=='1') | (dat$MT9=='Female') | (dat$G2P5_11=='1') | 
+                                            (dat$G2P4_11=='1') | (dat$G2P2_11=='Female') | (dat$question3 == 1) |
+                                            (dat$question2 == 1)), 'Female', 
+                                        ifelse(((dat$NetSum <= -11)  | 
+                                                   (dat$Male_Sum_35Plus==9) |
+                                                   (dat$Male_Sum_40Plus==7) | (dat$Male_Sum_40Plus==6)), 'Male', 'Undecided')))
+
+testdat$logic_prediction = as.factor(ifelse(((testdat$NetSum >= 11) | (testdat$Sum_40Plus >= 5) | (testdat$sum40_Questions > 10) |
+                                                (testdat$G2P1_16=='1') | (testdat$MT9=='Female') | (testdat$G2P5_11=='1') | 
+                                                (testdat$G2P4_11=='1') | (testdat$G2P2_11=='Female') | (testdat$question3 == 1) |
+                                                (testdat$question2 == 1)), 'Female', 
+                                            ifelse(((testdat$NetSum <= -11) | 
+                                                       (testdat$Male_Sum_35Plus==9) |
+                                                       (testdat$Male_Sum_40Plus==7) | (testdat$Male_Sum_40Plus==6)), 'Male', 'Undecided')))
+
+
+# Remove dataframes that aren't needed at this point to clear up memory
+rm(trainrest)
+rm(testrest)
+rm(train)
+rm(test)
+rm(all)
+rm(all2)
+rm(all3)
+rm(all4)
+rm(missing)
+rm(missing2)
+rm(factors)
+rm(factors2)
+
+### Split all multi-level factor variables into binary variables
+# Allows for quicker modeling
+is.fact <- sapply(dat, is.factor)
+factors.df <- dat[, is.fact]
+variables = names(factors.df) 
+rm(factors.df)
+variables = variables[-which(variables %in% c('train_id', 'is_female', 'DG4', 'bin_age'))]
+for(i in 1:length(variables)){
+   length = nlevels(dat[,which(names(dat) == variables[i])])
+   levels = levels(dat[,which(names(dat) == variables[i])])
+   for(j in 1:length){
+      dat[,paste(variables[i], j, sep="_")] = as.factor(ifelse(dat[,which(names(dat) == variables[i])] == levels[j], 1, 0))
+   }
+   dat[,variables[i]] = NULL
+}
+
+# Do the same for test data
+is.fact <- sapply(testdat, is.factor)
+factors.df <- testdat[, is.fact]
+variables = names(factors.df) 
+rm(factors.df)
+variables = variables[-which(variables %in% c('test_id', 'DG4', 'bin_age'))]
+for(i in 1:length(variables)){
+   length = nlevels(testdat[,which(names(testdat) == variables[i])])
+   levels = levels(testdat[,which(names(testdat) == variables[i])])
+   for(j in 1:length){
+      testdat[,paste(variables[i], j, sep="_")] = as.factor(ifelse(testdat[,which(names(testdat) == variables[i])] == levels[j], 1, 0))
+   }
+   testdat[,variables[i]] = NULL
+}
+
+###############################################################################
+########## SPLIT INTO TRAINING AND VALIDATION
+###############################################################################
+
+# Bring in Lisa's Elastic Net results
+lisatrain = read.csv('C:/Users/dcoli/Downloads/train (1).csv')
+lisatrain$train_id = lisatrain$trainid - 1
+lisavalid = read.csv('C:/Users/dcoli/Downloads/valid.csv')
+lisavalid$train_id = lisavalid$testid - 1
+lisatest = read.csv('C:/Users/dcoli/Downloads/mysub.csv')
+
+# Split into training and validation using the same ID's that Lisa used in her splitting
+sample = as.integer(lisatrain$train_id)
+set.seed(25)
+modeling <- dat[which(dat$train_id %in% sample), ]
+validation  <- dat[-which(dat$train_id %in% sample), ]
+
+# Drop these variables
+modeling = modeling[,-which(names(modeling) %in% c('MT3_3_8', 'MT12_4_5', 'MT12_9_5', 'MT12_13_5', 'MT12_14_5', 'G2P2_11_3', 
+                                                   'G2P2_11_5', 'G2P2_11_7', 'MT3_3_6', 'MT12_1_5', 'MT12_7_5', 'MT12_11_4', 
+                                                   'MT3_2_6', 'G2P2_11_8', 'MT6B_7', 'MT12_3_5', 
+                                                   'MT12_11_5', 'MT12_14_3', 
+                                                   "MT12_1_5", "MT12_1_6", "MT12_12_4", "MT12_13_5", "MT12_14_5", "MT12_2_8" ,"MT12_3_7" ,"MT12_4_5","MT12_9_5", 
+                                                   "MT3_2_7","MT3_3_8"))]
+validation = validation[,-which(names(validation) %in% c('MT3_3_8', 'MT12_4_5', 'MT12_9_5', 'MT12_13_5', 'MT12_14_5', 'G2P2_11_3', 
+                                                         'G2P2_11_5', 'G2P2_11_7', 'MT3_3_6', 'MT12_1_5', 'MT12_7_5', 'MT12_11_4', 
+                                                         'MT3_2_6', 'G2P2_11_8', 'MT6B_7', 'MT12_3_5', 
+                                                         'MT12_11_5', 'MT12_14_3', 
+                                                         "MT12_1_5", "MT12_1_6", "MT12_12_4", "MT12_13_5", "MT12_14_5", "MT12_2_8" ,"MT12_3_7" ,"MT12_4_5","MT12_9_5", 
+                                                         "MT3_2_7","MT3_3_8"))]
+
+testing = testdat[,-which(names(testdat) %in% c('MT3_3_8', 'MT12_4_5', 'MT12_9_5', 'MT12_13_5', 'MT12_14_5', 'G2P2_11_3', 
+                                                'G2P2_11_5', 'G2P2_11_7', 'MT3_3_6', 'MT12_1_5', 'MT12_7_5', 'MT12_11_4', 
+                                                'MT3_2_6', 'G2P2_11_8', 'MT6B_7', 'MT12_3_5', 
+                                                'MT12_11_5', 'MT12_14_3', 
+                                                "MT12_1_5", "MT12_1_6", "MT12_12_4", "MT12_13_5", "MT12_14_5", "MT12_2_8" ,"MT12_3_7" ,"MT12_4_5","MT12_9_5", 
+                                                "MT3_2_7","MT3_3_8"))]
+
+# Ensure ID variables are the same
+lisavalid$is_female = validation$is_female
+
+# Find the appropriate Elastic Net probability cutoff for classification
+library(pROC)
+cutoff_possibilities = seq(.01,1.0, .01)
+cutoff_data_EL = as.data.frame(cutoff_possibilities)
+for(m in 1:length(cutoff_possibilities)){
+   lisavalid$decision= NULL
+   lisavalid$decision = ifelse(lisavalid$prob >= cutoff_possibilities[m], 1, 0)
+   cutoff_data_EL[m,'auc'] = auc(roc(as.numeric(lisavalid$is_female), as.numeric(lisavalid$decision)))
+}
+cutoff_EL = cutoff_data_EL[which(cutoff_data_EL$auc == max(cutoff_data_EL$auc)), 'cutoff_possibilities']
+
+#AUC_EL = 0.9068458
+
+#######################################################################################
+#######################################################################################
+#######################################################################################
+##### MODELING
+#######################################################################################
+#######################################################################################
+#######################################################################################
+
+#######################################################################################
+##### Random Forest
+#######################################################################################
+modeling_RF = modeling
+modeling_RF$train_id = NULL
+modeling_RF$newpred=NULL
+library(randomForest)
+
+# Fit a Random Forest model
+fit_RF <- randomForest(x=modeling_RF[,-1], y=as.factor(modeling_RF[,1]), 
+                       importance=TRUE, 
+                       ntree=500, mtry=1000, maxnodes=1000)
+#varImpPlot(fit_RF, n.var=60, main='2000 trees')
+
+# Predict the training observations
+modeling_RF$newpred <- predict(fit_RF, modeling_RF)
+
+############################################################ validation set
+validation_RF = validation
+validation_RF$train_id = NULL
+validation_RF$newpred = NULL
+validation_RF$newpred <- predict(fit_RF, validation_RF, type = 'prob')[5478:(5477*2)]
+
+# Find the optimal cutoff probability
+cutoff_possibilities = seq(.01,1.0, .01)
+cutoff_data_RF = as.data.frame(cutoff_possibilities)
+for(i in 1:length(cutoff_possibilities)){
+   validation_RF$decision= NULL
+   validation_RF$decision = ifelse(validation_RF$newpred >= cutoff_possibilities[i], 1, 0)
+   cutoff_data_RF[i,'auc'] = auc(roc(as.numeric(validation_RF$is_female), as.numeric(validation_RF$decision)))
+}
+
+# Final cutoff probability for classification
+cutoff_RF = cutoff_data_RF[which(cutoff_data_RF$auc==max(cutoff_data_RF$auc)), 'cutoff_possibilities']
+
+# Reults of the random forest model on validation data
+validation_RF$prediction_RF = ifelse(validation_RF$newpred >= cutoff_RF, 1, 0)
+validresults = table(validation_RF$prediction_RF, validation_RF$is_female)
+print(validresults)
+print(paste('True Male:', round((validresults[1] / (validresults[1] + validresults[3])), digits=3)))
+print(paste('True Female:', round((validresults[4] / (validresults[2] + validresults[4])), digits=3)))
+print(paste('Percent Male:', round((validresults[1] / (validresults[1] + validresults[2])), digits=3)))
+print(paste('Percent Female:', round((validresults[4] / (validresults[3] + validresults[4])), digits=3)))
+
+#install.packages('pROC')
+library(pROC)
+roc_obj_RF <- roc(as.numeric(validation_RF$is_female), as.numeric(validation_RF$prediction_RF))
+AUC_RF = as.numeric(auc(roc_obj_RF))
+print(AUC_RF)
+
+###################################################################################
+## XGBoost
+###################################################################################
+
+library(xgboost)
+
+# create separate dataset for XGBoost
+modeling_XG = modeling
+modeling_XG$train_id = NULL
+modeling_XG$newpred=NULL
+
+# Turn into a sparse matrix
+library(Matrix)
+sparse_matrix <- sparse.model.matrix(is_female ~.-1, data = modeling_XG)
+output_vector = modeling_XG[,'is_female'] == "1"
+
+# Fix XGBoost model
+fit_XG <- xgboost(data = sparse_matrix, label = output_vector, max_depth = 100,
+                  eta = 1, nthread = 5, nrounds = 100,objective = "binary:logistic")
+
+validation_XG = validation
+validation_XG$train_id = NULL
+validation_XG$newpred = NULL
+
+# Validation data: turn into sparse matrix
+sparse_matrix_valid <- sparse.model.matrix(is_female ~.-1, data = validation_XG)
+output_vector_valid = validation_XG[,'is_female'] == "1"
+validation_XG$newpred <- predict(fit_XG, sparse_matrix_valid)
+
+# Find optimal cutoff probability
+library(pROC)
+cutoff_possibilities = seq(.01,1.0, .01)
+cutoff_data_XG = as.data.frame(cutoff_possibilities)
+for(m in 1:length(cutoff_possibilities)){
+   validation_XG$decision= NULL
+   validation_XG$decision = ifelse(validation_XG$newpred >= cutoff_possibilities[m], 1, 0)
+   cutoff_data_XG[m,'auc'] = auc(roc(as.numeric(validation_XG$is_female), as.numeric(validation_XG$decision)))
+}
+
+# Finalize cutoff probability and print out performance statistics on validation data
+cutoff_XG = cutoff_data_XG[which(cutoff_data_XG$auc==max(cutoff_data_XG$auc)), 'cutoff_possibilities']
+validation_XG$prediction_XG = ifelse(validation_XG$newpred >= cutoff_XG, 1, 0)
+validresults = table(validation_XG$prediction_XG, validation_XG$is_female)
+print(validresults)
+print(paste('True Male:', round((validresults[1] / (validresults[1] + validresults[3])), digits=3)))
+print(paste('True Female:', round((validresults[4] / (validresults[2] + validresults[4])), digits=3)))
+print(paste('Percent Male:', round((validresults[1] / (validresults[1] + validresults[2])), digits=3)))
+print(paste('Percent Female:', round((validresults[4] / (validresults[3] + validresults[4])), digits=3)))
+
+# Print out AUC for XGBoost
+library(pROC)
+roc_obj_XG <- roc(as.numeric(validation_XG$is_female), as.numeric(validation_XG$prediction_XG))
+AUC_XG = as.numeric(auc(roc_obj_XG))
+print(AUC_XG)
+
+
+###################################################################################
+## XGBoost -- 2nd (Using a grid search)
+###################################################################################
+
+library(xgboost)
+
+# Create new modeling dataframe for XGBoost
+modeling_XG2 = modeling
+modeling_XG2$train_id = NULL
+modeling_XG2$newpred=NULL
+modeling_XG2Matrix = as.matrix(modeling_XG2)
+dtrain <- xgb.DMatrix(modeling_XG2Matrix[,-1], label = modeling_XG2Matrix$is_female)
+
+# Create a sparse matrix
+library(Matrix)
+sparse_matrix <- sparse.model.matrix(is_female ~.-1, data = modeling_XG2)
+output_vector = modeling_XG2[,'is_female'] == "1"
+
+# Grid search: find the best model that performs the best on validation data
+results = as.data.frame(0)
+results$eta = results$`0`
+row=1
+results$`0`=NULL
+for(eta in c(0, .5, 1)){
+   for(gamma in c(0,10, 20)){
+      for(max_depth in c(60, 80, 100)){
+         for(min_child_weight in c(1,10,20)){
+            for(subsample in c(0.5, 0.65, 0.8)){
+               for(colsample_bytree in c(0.5, 1, 2)){
+                  for(num_parallel_tree in c(0.5, 0.65, 0.8)){
+                     for(lambda in c(0, 0.5, 1)){
+                        for(alpha in c(0, 0.5, 1)){
+                           # results is a data frame with all possible parameter combinations
+                           # Will use this data frame for grid search
+                           results[row,'eta'] = eta
+                           results[row, 'gamma'] = gamma
+                           results[row, 'max_depth'] = max_depth
+                           results[row, 'min_child_weight'] = min_child_weight
+                           results[row, 'subsample'] = subsample
+                           results[row, 'colsample_bytree'] = colsample_bytree
+                           results[row, 'num_parallel_tree'] = num_parallel_tree
+                           results[row, 'lambda'] = lambda
+                           results[row, 'alpha'] = alpha
+                           
+                           # fit the model 
+                           fit_XG2 <- xgb.train(params=list(eta = eta, nthread = 5, nrounds = 100,objective = "binary:logistic", 
+                                                            gamma=gamma, min_child_weight=min_child_weight, subsample=subsample, 
+                                                            colsample_bytree=colsample_bytree, num_parallel_tree=num_parallel_tree, 
+                                                            lambda=lambda, alpha=alpha, max_depth=max_depth), data = sparse_matrix, label = output_vector)
+                           
+                           # Score the validation data
+                           validation_XG2 = validation
+                           validation_XG2$train_id = NULL
+                           validation_XG2$newpred = NULL
+                           
+                           validation_XG2 = validation_XG2[,-which(names(validation_XG2) %in% c('MT3_3_8', 'MT12_4_5', 'MT12_9_5', 'MT12_13_5', 'MT12_14_5', 'G2P2_11_3',
+                                                                                                'G2P2_11_5', 'G2P2_11_7', 'MT3_3_6', 'MT12_1_5', 'MT12_7_5', 'MT12_11_4',
+                                                                                                'MT3_2_6', 'G2P2_11_8', 'MT6B_7', 'MT12_3_5',
+                                                                                                'MT12_11_5', 'MT12_14_3'))]
+                           
+                           # Create sparse matrix
+                           sparse_matrix_valid <- sparse.model.matrix(is_female ~.-1, data = validation_XG2)
+                           output_vector_valid = validation_XG2[,'is_female'] == "1"
+                           
+                           validation_XG2$newpred <- predict(fit_XG2, sparse_matrix_valid)
+                           
+                           # Find an optimal cutoff probability for current iteration of XGBoost model
+                           cutoff_possibilities = seq(.01,1.0, .01)
+                           cutoff_data = as.data.frame(cutoff_possibilities)
+                           for(m in 1:length(cutoff_possibilities)){
+                              validation_XG2$decision= NULL
+                              validation_XG2$decision = ifelse(validation_XG2$newpred >= cutoff_possibilities[m], 1, 0)
+                              cutoff_data[m,'auc'] = auc(roc(as.numeric(validation_XG2$is_female), as.numeric(validation_XG2$decision)))
+                           }
+                           
+                           # Include best cutoff probability and its corresponding AUC
+                           results[row,"best_cutoff"] = cutoff_data[which(cutoff_data$auc==max(cutoff_data$auc)), 'cutoff_possibilities'][1]
+                           results[row,"best_auc"] = cutoff_data[which(cutoff_data$auc==max(cutoff_data$auc)), 'auc'][1]
+                           
+                           # Print out how far along we are in all models in the console
+                           print(paste('Model', row, 'of 19683 AUC:', cutoff_data[which(cutoff_data$auc==max(cutoff_data$auc)), 'auc'][1]))
+                           
+                           # proceed to next model -- go to next row in the results dataframe
+                           row=row+1
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+}
+
+# At this step I just sorted the results table by AUC
+# In the future: add code to where it's picking the best model's parameters automatically
+
+fit_XG2 <- XG2boost(data = sparse_matrix, label = output_vector, max_depth = 100,
+                    eta = 1, nthread = 5, nrounds = 100,objective = "binary:logistic")
+
+validation_XG2 = validation
+validation_XG2$train_id = NULL
+validation_XG2$newpred = NULL
+
+sparse_matrix_valid <- sparse.model.matrix(is_female ~.-1, data = validation_XG2)
+output_vector_valid = validation_XG2[,'is_female'] == "1"
+validation_XG2$newpred <- predict(fit_XG2, sparse_matrix_valid)
+
+# Find best cutoff probability
+library(pROC)
+cutoff_possibilities = seq(.01,1.0, .01)
+cutoff_data_XG2 = as.data.frame(cutoff_possibilities)
+for(m in 1:length(cutoff_possibilities)){
+   validation_XG2$decision= NULL
+   validation_XG2$decision = ifelse(validation_XG2$newpred >= cutoff_possibilities[m], 1, 0)
+   cutoff_data_XG2[m,'auc'] = auc(roc(as.numeric(validation_XG2$is_female), as.numeric(validation_XG2$decision)))
+}
+
+# Print out summary statistics
+cutoff_XG2 = cutoff_data_XG2[which(cutoff_data_XG2$auc==max(cutoff_data_XG2$auc)), 'cutoff_possibilities']
+validation_XG2$prediction_XG2 = ifelse(validation_XG2$newpred >= cutoff_XG2, 1, 0)
+validresults = table(validation_XG2$prediction_XG2, validation_XG2$is_female)
+print(validresults)
+print(paste('True Male:', round((validresults[1] / (validresults[1] + validresults[3])), digits=3)))
+print(paste('True Female:', round((validresults[4] / (validresults[2] + validresults[4])), digits=3)))
+print(paste('Percent Male:', round((validresults[1] / (validresults[1] + validresults[2])), digits=3)))
+print(paste('Percent Female:', round((validresults[4] / (validresults[3] + validresults[4])), digits=3)))
+
+library(pROC)
+roc_obj_XG2 <- roc(as.numeric(validation_XG2$is_female), as.numeric(validation_XG2$prediction_XG2))
+AUC_XG2 = as.numeric(auc(roc_obj_XG2))
+print(AUC_XG2)
+
+############################################################################################################
+############ Data frame of all scores
+############################################################################################################
+
+#Lisa's elasic net
+all_models = as.data.frame(validation_RF$is_female)
+all_models$is_female = all_models$`validation_RF$is_female`
+all_models$`validation_RF$is_female`=NULL
+all_models$decision_RF = validation_RF$prediction_RF
+all_models$prediction_EL = lisavalid$prob
+all_models$valid_id = lisavalid$train_id
+
+all_models$decision_EL = ifelse(all_models$prediction_EL >= cutoff_EL, 1, 0)
+all_models$prediction_EL=NULL
+all_models = all_models[,c(3,1,4,2)]
+
+all_models$decision_XG = validation_XG$prediction_XG
+
+# Majority vote from the 3 models 
+all_models$majority_vote = ifelse(all_models$decision_EL+all_models$decision_RF+all_models$decision_XG > 1.5, 1, 0)
+
+roc_obj_MAJ <- roc(as.numeric(all_models$is_female), as.numeric(all_models$majority_vote))
+AUC_MAJ = as.numeric(auc(roc_obj_MAJ))
+print(AUC_MAJ)
+
+all_models$EL_RF_XG = paste(all_models$decision_EL, all_models$decision_RF, all_models$decision_XG, sep="")
+all_models$EL_RF = paste(all_models$decision_EL, all_models$decision_RF,sep="")
+all_models$EL_XG = paste(all_models$decision_EL, all_models$decision_XG, sep="")
+all_models$RF_XG = paste(all_models$decision_RF, all_models$decision_XG, sep="")
+
+table(all_models$RF_XG, all_models$is_female)
+
+
+
+
+
+################################################################################
+################################################################################ TEST DATA
+################################################################################
+
+# Elastic Net
+testing_EL = lisatest
+testing_EL$prediction_EL = ifelse(testing_EL$is_female >= cutoff_EL, 1, 0)
+
+# Random Forest
+testing_RF = testing
+testing_RF$test_id = NULL
+testing_RF$newpred = NULL
+testing_RF$newpred <- predict(fit_RF, testing_RF, type = 'prob')[27286:(27285*2)]
+testing_RF$prediction_RF = ifelse(testing_RF$newpred >= cutoff_RF, 1, 0)
+
+# XGBoost
+testing_XG = testing
+testing_XG$test_id = NULL
+testing_XG$newpred = NULL
+#validation_XG$newpred <- predict(fit_XG, sparse_matrix)
+
+# validation_XG = validation_XG[,-which(names(validation_XG) %in% c('MT3_3_8', 'MT12_4_5', 'MT12_9_5', 'MT12_13_5', 'MT12_14_5', 'G2P2_11_3', 
+#                                                             'G2P2_11_5', 'G2P2_11_7', 'MT3_3_6', 'MT12_1_5', 'MT12_7_5', 'MT12_11_4', 
+#                                                             'MT3_2_6', 'G2P2_11_8', 'MT6B_7', 'MT12_3_5', 
+#                                                             'MT12_11_5', 'MT12_14_3', 
+#                                                             "MT12_1_5", "MT12_1_6", "MT12_12_4", "MT12_13_5", "MT12_14_5", "MT12_2_8" ,"MT12_3_7" ,"MT12_4_5","MT12_9_5", 
+#                                                             "MT3_2_7","MT3_3_8"))]
+
+#library(Matrix)
+sparse_matrix_test <- sparse.model.matrix(~., testing_XG)
+
+#levels = as.data.frame(sapply(testing_XG, function(x) nlevels(x)))
+
+#head(sparse_matrix)
+#output_vector_valid = validation_XG[,'is_female'] == "1"
+
+testing_XG$newpred <- predict(fit_XG, sparse_matrix_test)
+
+testing_XG$prediction_XG = ifelse(testing_XG$newpred >= cutoff_XG, 1, 0)
+
+
+
+
+
+
+
+
+
+################################################################################
+################################################################################ TEST DATA -- ENSEMBLING
+################################################################################
+
+
+
+#Lisa's elasic net
+all_models_test = as.data.frame(testing$test_id)
+all_models_test$decision_RF = testing_RF$prediction_RF
+all_models_test$prediction_EL = lisatest$is_female
+
+all_models_test$decision_EL = ifelse(all_models_test$prediction_EL >= cutoff_EL, 1, 0)
+all_models_test$prediction_EL=NULL
+all_models_test = all_models_test[,c(1,3,2)]
+
+all_models_test$decision_XG = testing_XG$prediction_XG
+
+all_models_test$majority_vote = ifelse(all_models_test$decision_EL+all_models_test$decision_RF+all_models_test$decision_XG > 1.5, 1, 0)
+
+submission = all_models_test[,c(1,5)]
+colnames(submission) = c('test_id', 'is_female')
+
+write.csv(submission, 'C://Users/dcoli/Desktop/secondtry.csv')
+
+save(modeling, validation, testing, file = 'C://Users/dcoli/Desktop/24_Feb_Data.RData')
+
+
